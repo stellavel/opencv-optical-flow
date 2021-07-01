@@ -42,7 +42,7 @@ int const max_kernel_size = 21;
 
 int main() {
 
-	cv::VideoCapture input("NIR_1.mp4");
+	cv::VideoCapture input("video.mp4");
 		
 	std::vector<std::vector<cv::Point> > contours, contours_prev;
    	std::vector<cv::Vec4i> hierarchy;
