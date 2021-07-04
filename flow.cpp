@@ -42,7 +42,7 @@ int const max_kernel_size = 21;
 
 int main() {
 
-	cv::VideoCapture input("video.mp4");
+	cv::VideoCapture input("NIR_1.mp4");
 		
 	std::vector<std::vector<cv::Point> > contours, contours_prev;
    	std::vector<cv::Vec4i> hierarchy;
@@ -87,7 +87,7 @@ int main() {
 	opening_elem = 1;
 	opening_size = 5;
 	closing_elem = 1;
-	closing_size = 6;
+	closing_size = 8;
 	
 	printf("CLAHE: %d \n", applyCLAHE);
 	printf("Threshold: %d \n", threshMin);
@@ -213,40 +213,42 @@ int main() {
 			d.clear();
 			good.clear();
 
-			for ( auto i = 0; i < p0.size(); i++) {
+			for (auto i = 0; i < p0.size(); i++) {
+
+				circle(imageROI, p0[i], 3, Scalar(0,0,0), -1);
+			}
+
+			for (auto i = 0; i < p0.size(); i++) {
 
 				double dist = max(abs(p0[i].x-p0r[i].x), abs(p0[i].y-p0r[i].y));
 
-
-				d.push_back(dist);
-
-				if ((d[i] < 2) && (status[i])) {
+				if ((dist < 1) && (status[i])) {
 
 				//if ((norm(p0[i] - p0r[i]) < 18) && (status[i])) {
 				//continue;
 			
 					good.push_back(1);
+
+					circle(imageROI, p0r[i], 3, Scalar(0,0,255), -1);
 				}
 				else {
 					good.push_back(0);
+
+					circle(imageROI, p0r[i], 3, Scalar(255,0,0), -1);
 				}
 
-			}
+				line(vis, p0[i], p0r[i], colors[i], 1.5);
 
+			}
 			
 			// append only new good locations to existing tracked points
 
-			std::vector<cv::Point2f> new_good_points;
-
 			std::vector<std::vector<cv::Point2f> > new_tracks;
 
-			new_good_points.clear();
-
 			new_tracks.clear();
-
 			new_colors.clear();
 
-			for ( auto i = 0; i < tracks.size(); i++) {
+			for (auto i = 0; i < tracks.size(); i++) {
 
 				if (!good[i]) {
 					continue;
@@ -254,14 +256,12 @@ int main() {
 
 				new_tracks.push_back(tracks[i]);
 				new_colors.push_back(colors[i]);
-				
 			}
 
 
 			int k=0;
 
 			for (int j = 0; j < p1.size(); j++) {
-
 
 				if (!good[j]) {
 					continue;
@@ -275,23 +275,10 @@ int main() {
 			tracks = new_tracks;
 
 			colors = new_colors;
-
-			// keep only the last 'track_len' locations in each track
-
-			//for ( auto i = 0; i < tracks[1].size(); i++) {
-
-				//if (tracks[i].size() > track_len) {
-	           //     	tracks.erase(tracks[i].begin() + 0);
-				//}
-
-	        // }
-
     
     		// draw latest points and their tracks 
 
-
 			for (auto i = 0; i < tracks.size(); i++) {
-
 
 				circle(vis, tracks[i].back(), 3, Scalar(0,0,0), -1);
 
@@ -301,6 +288,10 @@ int main() {
     			}
 			}
 		}
+
+		imshow("Contours", imageROI);
+
+		int keyboard = waitKey(0);
 
 		// display number of tracked points
 
@@ -382,6 +373,10 @@ int main() {
 
 			p_unique.clear();
 
+			//for (auto i = 0; i < tracks.size(); i++) {
+
+			//	circle(imageROI, tracks[i].back(), 3, Scalar(0,0,0), -1);
+			//}
 
 			// Nea points sygkrish me ta palia wste na mhn yparxoyn dipla
 
@@ -396,9 +391,10 @@ int main() {
 						for (auto j = 0; j<tracks.size(); j++) {
 
 							dist1 = cv::norm(p[i]-tracks[j].back());
-
        
-							if (dist1 < 1) {
+							if (dist1 < 13) {
+
+								//circle(imageROI, p[i], 3, Scalar(255,0,0), 2);
 
 								match = 1;
 
@@ -406,23 +402,24 @@ int main() {
 							}
 						}
 
-
 						if (match == 0) {
+
+							//circle(imageROI, p[i], 3, Scalar(0,0,255), 2);
 
 							p_unique.push_back(p[i]);
 
 						}
-
-
 					}
-
 				}
 				else {
 
 					p_unique = p;
 				}
-
 			}
+
+			//imshow("Contours", imageROI);
+
+			//int keyboard = waitKey(0);
 
 
 			neighbor_p.clear();
@@ -430,6 +427,11 @@ int main() {
 
 			int a=0;
 			float dist2;
+
+			//for (auto i = 0; i < tracks.size(); i++) {
+
+				//circle(imageROI, tracks[i].back(), 3, Scalar(0,0,0), -1);
+			//}
 
 
 			// Group ta kontina points
@@ -443,7 +445,6 @@ int main() {
 					//ypologise thn apostash me ta ypoloipa
 
 					neighbor_p.clear();
-					
 
 					if (((*i).x != 0) && ((*i).y != 0)) {
 
@@ -452,9 +453,7 @@ int main() {
 
 							if ((j != i) && (((*j).x != 0) && ((*j).y != 0)))	{
 
-
 								dist2 = cv::norm(*i-*j);
-
 							}
 							else {
 								
@@ -463,15 +462,15 @@ int main() {
 	                 
 							//osa exoun mikrh apostasi me to shmeio, apothikeyontai kai diagrafontai apo th lista
 
-							if (dist2 < 31) {
+							if (dist2 < 50) {
+
+								neighbor_p.push_back(*i);
 
 								neighbor_p.push_back(*j);
 
 								(*j).x = 0;
 								(*j).y = 0;
 							}
-
-
 						}
 
 
@@ -479,26 +478,47 @@ int main() {
 	         
 						if (neighbor_p.size() > 0) {
 
+							//printf("size %ld\n", neighbor_p.size());
 
-							mo_x = (*i).x;
-							mo_y = (*i).y;
+							//for (auto m = 0; m < neighbor_p.size(); m++) {
+
+								//circle(imageROI, neighbor_p[m], 3, Scalar(0,255,0), -1);
+							//}
+
+							Rect box = boundingRect(neighbor_p); 
+							rectangle(imageROI, box, Scalar(0,0,255),1,8,0);
+
+
+							//mo_x = (*i).x;
+							//mo_y = (*i).y;
+
+							mo_x = 0;
+							mo_y = 0;
 							
 							for (auto k = 0; k<neighbor_p.size(); k++) {
 
 
 								mo_x = mo_x + neighbor_p[k].x;
-								mo_y = mo_x + neighbor_p[k].y;
+								mo_y = mo_y + neighbor_p[k].y;
 
 							}
 
-							mo_point.x = mo_x / (neighbor_p.size()+1);
-							mo_point.y = mo_y / (neighbor_p.size()+1);
+							//mo_point.x = mo_x / (neighbor_p.size()+1);
+							//mo_point.y = mo_y / (neighbor_p.size()+1);
+
+							mo_point.x = mo_x / neighbor_p.size();
+							mo_point.y = mo_y / neighbor_p.size();
+
 
 							p_new.push_back(mo_point);
+
+							//circle(imageROI, mo_point, 3, Scalar(0,0,255), -1);
 
 
 						}
 						else {
+
+							//circle(imageROI, *i, 3, Scalar(0,255,0), -1);
 
 							p_new.push_back(*i);
 
@@ -512,6 +532,10 @@ int main() {
 				}
 			}
 
+			//imshow("Contours", imageROI);
+
+			//int keyboard = waitKey(0);
+
 			// Append new set of points 
 
 			if (!p_new.empty()) {
@@ -521,7 +545,7 @@ int main() {
 					v1.push_back(p_new[i]);
 					tracks.push_back(v1);
 
-					// Create some random colors
+					// Create a random color
 
 					int r = rng.uniform(0, 256);
 			        int g = rng.uniform(0, 256);
@@ -534,7 +558,6 @@ int main() {
 			}
 
 		}
-
 
         // Next iteration/frame
 
@@ -554,9 +577,13 @@ int main() {
         imshow("Optical flow tracks", vis);
 		
 
-		int keyboard = waitKey(30);
-        if (keyboard == 'q' || keyboard == 27)
+		int key = waitKey(30);
+
+        if (key == 'q' || key == 27)
             break;
+
+        if (key == ' ')
+        	waitKey(-1);
 
 	}
 	
