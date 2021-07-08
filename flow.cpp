@@ -10,21 +10,22 @@
 #include <opencv2/tracking.hpp>
 #include <cmath>
 #include <stdlib.h>  
+#include <unordered_map>
+#include <chrono>
 
 using namespace cv;
+using namespace std::chrono;
+
 
 cv::Mat frame, frame_prev;
 cv::Mat img;
 cv::Mat imageROI;
 Mat erosion_dst, dilation_dst;
 int applyCLAHE = 0;
-int threshMin = 0;
 int roi_top = 1560;
 int roi_bottom = 1560;
 int roi_left = 2104;
 int roi_right = 2104;
-int runbutton = 0;
-int boxselect = 0;
 int erosion_elem = 0;
 int erosion_size = 0;
 int dilation_elem = 0;
@@ -33,18 +34,19 @@ int opening_elem = 0;
 int closing_elem = 0;
 int opening_size = 0;
 int closing_size = 0;
-int detect_interval = 5;
+int detect_interval = 8;
 int frame_idx = 0;
 int track_len = 15;
 int const max_elem = 2;
 int const max_kernel_size = 21;
 
+ // init map to track time for every stage at each iteration
+ std::vector<std::vector<double> > timers;
+
 
 int main() {
-
-	cv::VideoCapture input("NIR_1.mp4");
 		
-	std::vector<std::vector<cv::Point> > contours, contours_prev;
+	std::vector<std::vector<cv::Point> > contours;
    	std::vector<cv::Vec4i> hierarchy;
 	
 	int desiredWidth=640, desiredheight=480;
@@ -53,9 +55,6 @@ int main() {
 	std::vector<std::vector<cv::Point2f> > tracks;
 
 	std::vector<cv::Point2f> p0, p1, p0r, p;
-
-	std::vector<float> d;
-
 	std::vector<uchar> status;
 	std::vector<float> err;
 	std::vector<int> good;
@@ -69,10 +68,6 @@ int main() {
 
 	namedWindow("Optical flow tracks", WINDOW_NORMAL);
 	resizeWindow("Optical flow tracks", desiredWidth, desiredheight);
-
-	//namedWindow("Original", WINDOW_NORMAL);
-	//resizeWindow("Original", desiredWidth, desiredheight);
-
 	
 	int erosion_type = 0;
 	int dilation_type = 0;
@@ -85,48 +80,67 @@ int main() {
 	dilation_elem = 0;
 	dilation_size = 0;
 	opening_elem = 1;
-	opening_size = 5;
+	opening_size = 7;
 	closing_elem = 1;
-	closing_size = 8;
-	
-	printf("CLAHE: %d \n", applyCLAHE);
-	printf("Threshold: %d \n", threshMin);
-	printf("Erosion type & size: %d %d \n", erosion_elem, erosion_size);
-	printf("Dilation typ e& size: %d %d \n", dilation_elem, dilation_size);
-	printf("Opening type & size: %d %d \n", opening_elem, opening_size);
-	printf("Closing type & size: %d %d \n", closing_elem, closing_size);
-
-	
+	closing_size = 5;
 	
    	std::vector<Scalar> colors;
    	std::vector<Scalar> new_colors;
     RNG rng;
-    
 
     TermCriteria criteria = TermCriteria((TermCriteria::COUNT) + (TermCriteria::EPS), 10, 0.03);
+    std::vector<double> v2;
+
+    v2.push_back(0);
+
+    timers.push_back(v2);
+    timers.push_back(v2);
+    timers.push_back(v2);
+    timers.push_back(v2);
+    timers.push_back(v2);
+
+    // start full pipeline timer
+
+	auto start_full_time = high_resolution_clock::now();
 	
 	for (;;) {
 
-		double e1 = getTickCount();
+		// start reading timer
+
+		auto start_read_time = high_resolution_clock::now();
 	
 		if (!video.read(img))
 			break;
-		
-		
-		// Crop the image
 
+		// end reading timer
+
+	    auto end_read_time = high_resolution_clock::now();
+
+	    // add elapsed iteration time
+
+	    timers[0].push_back(duration_cast<milliseconds>(end_read_time - start_read_time).count() / 1000.0);
+
+	    // start pre-process timer
+
+	    auto start_pre_time = high_resolution_clock::now();
+		
+	
+		// Crop the image
 		
 		Rect Rec(430, 530, 1280, 800);     //x,y,width,height
 		rectangle(img, Rec, Scalar(255), 1, 8, 0);
 
 		imageROI = img(Rec);
 
+		//cv::Rect roi2(440,  530, 340, 280);
+
+		//rectangle(imageROI, roi2, Scalar(0,0,0),-1);
+
 		frame = imageROI.clone();
 
 		cv::cvtColor(frame, frame, COLOR_BGR2GRAY);
-
 		
-		// Perform the selected operations
+		// Perform operations
 		
 		if (applyCLAHE) {
 
@@ -137,7 +151,6 @@ int main() {
 			clahe->apply(frame, frame);
 		}
 	
-	   	
 		// Otsu Threshold
 		
 		threshold(frame, frame, 0, 255, THRESH_BINARY | THRESH_OTSU);
@@ -181,15 +194,26 @@ int main() {
 
 		Mat vis = imageROI.clone();
 
+		// end pre-process timer
+
+	    auto end_pre_time = high_resolution_clock::now();
+
+	    // add elapsed iteration time
+
+	    timers[1].push_back(duration_cast<milliseconds>(end_pre_time - start_pre_time).count() / 1000.0);
+
 
 		// Calculate optical flow
+
+		// start optical flow timer
+
+		auto start_of_time = high_resolution_clock::now();
 
 
 		if (!tracks.empty()) {
 
 			//track last position of points, in forward and backward direction
 			// in order to find points that were predicted correctly
-
 
 			p0.clear();
 
@@ -198,46 +222,44 @@ int main() {
 				p0.push_back(tracks[i].back());
 				
 			}
+
+			// start optical flow timer
+
+			auto start_opt_flow_time = high_resolution_clock::now();
 			
 
 			calcOpticalFlowPyrLK(frame_prev, frame, p0, p1, status, err, Size(31,31), 2, criteria);
 
 			calcOpticalFlowPyrLK(frame, frame_prev, p1, p0r, status, err, Size(31,31), 2, criteria);
 
+			
+			// end post pipeline timer
+
+			auto end_opt_flow_time = high_resolution_clock::now();
+
+			// add elapsed iteration time
+
+			timers[2].push_back(duration_cast<milliseconds>(end_opt_flow_time - start_opt_flow_time).count() / 1000.0);
+
 
 			//  keep only good matches
 
 			// The absolute difference is calculated between initial points (p0) and the backwards predicted points (p0r). 
 			// if the value is below one then the points were predicted correctly, if not it is a "bad" point.
-
-			d.clear();
+			
 			good.clear();
-
-			for (auto i = 0; i < p0.size(); i++) {
-
-				circle(imageROI, p0[i], 3, Scalar(0,0,0), -1);
-			}
 
 			for (auto i = 0; i < p0.size(); i++) {
 
 				double dist = max(abs(p0[i].x-p0r[i].x), abs(p0[i].y-p0r[i].y));
 
 				if ((dist < 1) && (status[i])) {
-
-				//if ((norm(p0[i] - p0r[i]) < 18) && (status[i])) {
-				//continue;
 			
 					good.push_back(1);
-
-					circle(imageROI, p0r[i], 3, Scalar(0,0,255), -1);
 				}
 				else {
 					good.push_back(0);
-
-					circle(imageROI, p0r[i], 3, Scalar(255,0,0), -1);
 				}
-
-				line(vis, p0[i], p0r[i], colors[i], 1.5);
 
 			}
 			
@@ -289,10 +311,6 @@ int main() {
 			}
 		}
 
-		imshow("Contours", imageROI);
-
-		int keyboard = waitKey(0);
-
 		// display number of tracked points
 
 		putText(vis, format("track count: %ld", tracks.size()), cv::Point(10, vis.rows / 2), cv::FONT_HERSHEY_DUPLEX,
@@ -306,32 +324,8 @@ int main() {
 		
 		if ((frame_idx % detect_interval == 0) || (tracks.empty())) {
 
-			/*if (!tracks.empty()) {
-
-            	//try to find new points by masking-out last track positions
-
-				Mat mask = frame.clone();
-
-				//bitwise_not(mask, mask);
-
-				//Mat mask = Mat::zeros(frame.size(),CV_8UC1);
-
-				for (auto i = 0; i < tracks.size(); i++) {
-
-					circle(mask, tracks[i].back(), 10, Scalar(0,0,0), -1);
-
-				}
-
-        		//imshow("MASK", mask);
-
-        		findContours(mask, contours, hierarchy, RETR_LIST, CHAIN_APPROX_SIMPLE);
-
-			}
-			else {*/
-
 			findContours(frame, contours, hierarchy, RETR_LIST, CHAIN_APPROX_SIMPLE);
-			//}
-
+			
 			// Compute the centers of the contours/blobs
 
 			std::vector<cv::Moments> mu(contours.size());
@@ -361,7 +355,6 @@ int main() {
 
 			}
 
-
 			std::vector<cv::Point2f> v1;
 			std::vector<cv::Point2f> neighbor_p;
 			std::vector<cv::Point2f> p_new;
@@ -372,11 +365,6 @@ int main() {
 			int match;
 
 			p_unique.clear();
-
-			//for (auto i = 0; i < tracks.size(); i++) {
-
-			//	circle(imageROI, tracks[i].back(), 3, Scalar(0,0,0), -1);
-			//}
 
 			// Nea points sygkrish me ta palia wste na mhn yparxoyn dipla
 
@@ -394,8 +382,6 @@ int main() {
        
 							if (dist1 < 13) {
 
-								//circle(imageROI, p[i], 3, Scalar(255,0,0), 2);
-
 								match = 1;
 
 								break;
@@ -403,8 +389,6 @@ int main() {
 						}
 
 						if (match == 0) {
-
-							//circle(imageROI, p[i], 3, Scalar(0,0,255), 2);
 
 							p_unique.push_back(p[i]);
 
@@ -417,22 +401,11 @@ int main() {
 				}
 			}
 
-			//imshow("Contours", imageROI);
-
-			//int keyboard = waitKey(0);
-
-
 			neighbor_p.clear();
 			p_new.clear();
 
 			int a=0;
 			float dist2;
-
-			//for (auto i = 0; i < tracks.size(); i++) {
-
-				//circle(imageROI, tracks[i].back(), 3, Scalar(0,0,0), -1);
-			//}
-
 
 			// Group ta kontina points
 
@@ -478,63 +451,30 @@ int main() {
 	         
 						if (neighbor_p.size() > 0) {
 
-							//printf("size %ld\n", neighbor_p.size());
-
-							//for (auto m = 0; m < neighbor_p.size(); m++) {
-
-								//circle(imageROI, neighbor_p[m], 3, Scalar(0,255,0), -1);
-							//}
-
-							Rect box = boundingRect(neighbor_p); 
-							rectangle(imageROI, box, Scalar(0,0,255),1,8,0);
-
-
-							//mo_x = (*i).x;
-							//mo_y = (*i).y;
-
 							mo_x = 0;
 							mo_y = 0;
 							
 							for (auto k = 0; k<neighbor_p.size(); k++) {
-
-
 								mo_x = mo_x + neighbor_p[k].x;
 								mo_y = mo_y + neighbor_p[k].y;
-
 							}
-
-							//mo_point.x = mo_x / (neighbor_p.size()+1);
-							//mo_point.y = mo_y / (neighbor_p.size()+1);
 
 							mo_point.x = mo_x / neighbor_p.size();
 							mo_point.y = mo_y / neighbor_p.size();
 
 
 							p_new.push_back(mo_point);
-
-							//circle(imageROI, mo_point, 3, Scalar(0,0,255), -1);
-
-
 						}
 						else {
-
-							//circle(imageROI, *i, 3, Scalar(0,255,0), -1);
 
 							p_new.push_back(*i);
 
 							(*i).x = 0;
 							(*i).y = 0;
 						}
-
 					}
-
-
 				}
 			}
-
-			//imshow("Contours", imageROI);
-
-			//int keyboard = waitKey(0);
 
 			// Append new set of points 
 
@@ -564,30 +504,73 @@ int main() {
         frame_idx++;
         frame_prev = frame.clone();
 
-		
-		double e2 = getTickCount();
-		float t = (e2 - e1)/getTickFrequency();
+        // end optical flow timer
 
-		//printf("Time frame %d : %f s\n", frame_idx, t);
+		auto end_of_time = high_resolution_clock::now();
 
-		//Mat combine;
+		// add elapsed iteration time
 
-		//hconcat(vis,imageROI, combine);
+		timers[3].push_back(duration_cast<milliseconds>(end_of_time - start_of_time).count() / 1000.0);
 
         imshow("Optical flow tracks", vis);
 		
 
-		int key = waitKey(30);
+		int key = waitKey(1);
 
         if (key == 'q' || key == 27)
             break;
 
-        if (key == ' ')
+        if (key == ' ')    //pause video
         	waitKey(-1);
 
+         // end optical flow timer
 	}
+
+	// end full pipeline timer
+
+	auto end_full_time = high_resolution_clock::now();
+
+	// add elapsed iteration time
+
+	timers[4].push_back(duration_cast<milliseconds>(end_full_time - start_full_time).count() / 1000.0);
+		
 	
-	 
+	 // elapsed time at each stage
+
+	printf("Elapsed time\n");
+
+	for (auto k = 0; k < timers.size(); k++) {
+
+		//printf("i %d\n", k);
+
+		if (k == 0) {
+			printf("Reading ");
+		}
+		else if (k == 1) {
+			printf("Pre-process ");
+		}
+		else if (k == 2) {
+			printf("Actual optical flow ");
+		}
+		else if (k == 3) {
+			printf("Optical flow ");
+		}
+		else if (k == 4) {
+			printf("Full pipeline ");
+		}
+
+		double timer=0;
+
+		for (auto j = 0; j< timers[k].size(); j++) {
+
+			timer = timer + timers[k][j];
+
+		}
+ 
+		printf("%f seconds\n", timer);
+
+	}
+
 }
 
 

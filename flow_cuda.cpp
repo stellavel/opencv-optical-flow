@@ -11,6 +11,7 @@
 #include <stdlib.h>  
 #include <unordered_map>
 #include <chrono>
+#include <opencv2/core/cuda.hpp>
 #include <opencv2/cudaarithm.hpp>
 #include <opencv2/cudaimgproc.hpp>
 #include <opencv2/cudawarping.hpp>
@@ -50,11 +51,13 @@ cv::cuda::GpuMat d_err;
 
 int main() {
 
-	cv::VideoCapture input("NIR_1.mp4");
+	cv::VideoCapture video("NIR_1.mp4");
 		
    	std::vector<cv::Vec4i> hierarchy;
 	
 	int desiredWidth=640, desiredheight=480; //window sizes
+
+	std::vector<std::vector<cv::Point> > contours;
 
 	// vector of vectors that stores the tracks (all positions) of each feature point
 
@@ -69,13 +72,11 @@ int main() {
 	std::vector<uchar> status;
 	std::vector<float> err;
 	
-	cv::VideoCapture video("NIR_1.mp4");
-	
 	//namedWindow("Contours", WINDOW_NORMAL);
 	//resizeWindow("Contours", desiredWidth, desiredheight);
 
-	namedWindow("Optical flow tracks", WINDOW_NORMAL);
-	resizeWindow("Optical flow tracks", desiredWidth, desiredheight);
+	//namedWindow("Optical flow tracks", WINDOW_NORMAL);
+	//resizeWindow("Optical flow tracks", desiredWidth, desiredheight);
 	
 	// Pre-processing values 
 
@@ -137,7 +138,6 @@ int main() {
 
 		// upload frame to GPU
 
-        cv::cuda::GpuMat gpu_frame;
         gpu_frame.upload(frame);
 
         // convert to gray
@@ -209,26 +209,23 @@ int main() {
 
 			auto start_opt_flow_time = high_resolution_clock::now();
 
-			d_p0(p0.getMat().reshape(2, 1));
+			d_p0.upload(p0);
 
 			// create optical flow instance
             Ptr< cuda::SparsePyrLKOpticalFlow > d_pyrLK = cuda::SparsePyrLKOpticalFlow::create(Size(31,31), 2, 30);
 
             d_pyrLK->calc(gpu_frame_prev, gpu_frame, d_p0, d_p1, status, err);
 
-            cv::Mat& nextPtsRef = p1.getMatRef();
             d_p1.download(p1);
-            nextPtsRef = nextPtsRef.t(); //revert the matrix to its actual shape
-
             d_status.download(status);
             d_err.download(err);
 
 
             d_pyrLK->calc(gpu_frame, gpu_frame_prev, d_p1, d_p0r, status, err);
 
-            cv::Mat& nextPtsRef = p0r.getMatRef();
             d_p0r.download(p0r);
-            nextPtsRef = nextPtsRef.t(); //revert the matrix to its actual shape
+            d_status.download(status);
+            d_err.download(err);
 
 			
 			// end post pipeline timer
