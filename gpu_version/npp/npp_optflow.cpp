@@ -71,7 +71,7 @@ int main() {
 	std::vector<uchar> status;
 	std::vector<float> err;
 
-	cv::VideoCapture video("NIR_1.mp4");
+	cv::VideoCapture video("my_video.mp4");
 	
  	std::vector<Scalar> colors;
  	std::vector<Scalar> new_colors;
